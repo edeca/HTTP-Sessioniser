@@ -20,6 +20,6 @@ requires('Net::LibNIDS' => '0.02'); # bugfixes
 #install_script('bin/minicpan');
 
 repository('http://github.com/edeca/HTTP-Sessioniser');
-#auto_manifest;
+auto_manifest;
 
 WriteAll();

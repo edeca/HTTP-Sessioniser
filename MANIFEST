@@ -1,6 +1,0 @@
-Changes
-Makefile.PL
-MANIFEST
-README
-t/HTTP-Sessioniser.t
-lib/HTTP/Sessioniser.pm
