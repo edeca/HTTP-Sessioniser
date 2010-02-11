@@ -1,16 +1,8 @@
-HTTP-Sessioniser version 0.01
-=============================
+HTTP-Sessioniser version 0.1
+============================
 
-The README is used to introduce the module and provide instructions on
-how to install the module, any machine dependencies it may have (for
-example C compilers and installed libraries) and any other information
-that should be provided before the module is installed.
-
-A README file is required for CPAN modules since CPAN extracts the
-README file from a module distribution so that people browsing the
-archive can use it get an idea of the modules uses. It is usually a
-good idea to provide version information here so that people can
-decide whether fixes for the module are worth downloading.
+This module reads data from pcap files using Net::LibNIDS and returns
+corresponding pairs of HTTP::Request and HTTP::Response objects.
 
 INSTALLATION
 
@@ -25,11 +17,10 @@ DEPENDENCIES
 
 This module requires these other modules and libraries:
 
-  blah blah blah
+  Net::LibNIDS (and associated C libnids library)
+  HTTP::Parser
 
 COPYRIGHT AND LICENCE
-
-Put the correct copyright and licence information here.
 
 Copyright (C) 2010 by David Cannings <david@edeca.net>
 
