@@ -33,7 +33,7 @@ our @EXPORT_OK = ( @{ $EXPORT_TAGS{'all'} } );
 
 our @EXPORT = qw(new parse_file);
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 
 # Preloaded methods go here.
 sub new {
@@ -91,7 +91,7 @@ sub process_data {
 		# marks the end-of-data, so pass it back now
 		if ($self->{connections}{$key}->{no_content_length}) {
 #			print STDERR "DEBUG: No content length header, connection closed, assuming finished\n";
-			$self->do_callback($key);
+			$self->do_callback($key, $args);
 		}
 #		print "CLOSED CONNECTION EVENT FOR $key IS CALLING cleanup\n";
 		$self->cleanup($key);
@@ -203,7 +203,7 @@ sub process_data {
 			# No more data needed
 			if ($status == 0) {
 #				print "DEBUG: We have a complete response\n";
-				$self->do_callback($key);
+				$self->do_callback($key, $args);
 
 			}
 			
@@ -213,7 +213,7 @@ sub process_data {
 }
 
 sub do_callback {
-	my ($self, $key) = @_;
+	my ($self, $key, $nids_obj) = @_;
 
 	my $request = $self->{connections}{$key}{request_obj}->object;
 	my $response = $self->{connections}{$key}{response_obj}->object;
@@ -224,10 +224,12 @@ sub do_callback {
 		exit 1;
 	}
 
-	# TODO: Put src/dst IP and port in here too
 	my $info = { 'request_time' => $self->{connections}{$key}{request_time},
 		'response_time' => $self->{connections}{$key}{response_time},
-		'filename' => $self->{current_filename} };
+		'filename' => $self->{current_filename},
+        'client_ip' => $nids_obj->client_ip,
+        'server_ip' => $nids_obj->server_ip
+    };
 
 	$self->{callback}($request, $response, $info);
 

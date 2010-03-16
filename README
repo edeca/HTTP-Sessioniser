@@ -1,5 +1,5 @@
-HTTP-Sessioniser version 0.1
-============================
+HTTP-Sessioniser version 0.04
+=============================
 
 This module reads data from pcap files using Net::LibNIDS and returns
 corresponding pairs of HTTP::Request and HTTP::Response objects.
