@@ -3,7 +3,7 @@ package HTTP::Sessioniser;
 use 5.008008;
 use strict;
 use warnings;
-use File::Slurp;
+#use File::Slurp;
 use IO::Compress::Gzip;		# We don't actually use this, but if it isn't installed
 				# then HTTP::Response will silently not ungzip data
 				# Using it here will error if it is installed
@@ -123,6 +123,7 @@ sub process_data {
 
 			if (!defined $self->{connections}{$key}{request_time}) {
 				$self->{connections}{$key}{request_time} = $args->lastpacket_sec;
+				$self->{connections}{$key}{request_time_usec} = $args->lastpacket_usec;
 			}
 
 			my $status;
@@ -167,6 +168,7 @@ sub process_data {
 			# Set the time from the first packet of the response
 			if (!defined $self->{connections}{$key}{response_time}) {
 				$self->{connections}{$key}{response_time} = $args->lastpacket_sec;
+				$self->{connections}{$key}{response_time_usec} = $args->lastpacket_usec;
 			}
 
 			# HTTP::Parser uses die(), so catch that here
@@ -214,7 +216,9 @@ sub do_callback {
 
 	my $info = { 
 		'request_time' => $self->{connections}{$key}{request_time},
+		'request_time_usec' => $self->{connections}{$key}{request_time_usec},
 		'response_time' => $self->{connections}{$key}{response_time},
+		'response_time_usec' => $self->{connections}{$key}{response_time_usec},
 		'filename' => $self->{current_filename},
 	        'client_ip' => $nids_obj->client_ip,
 	        'server_ip' => $nids_obj->server_ip
