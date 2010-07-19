@@ -26,8 +26,8 @@ our @ISA = qw(Exporter);
 # This allows declaration	use HTTP::Sessioniser ':all';
 # If you do not need this, moving things directly into @EXPORT or @EXPORT_OK
 # will save memory.
-#our %EXPORT_TAGS = ( 'all' => [ qw(
-#) ] );
+our %EXPORT_TAGS = ( 'all' => [ qw(
+) ] );
 
 our @EXPORT_OK = ( @{ $EXPORT_TAGS{'all'} } );
 
