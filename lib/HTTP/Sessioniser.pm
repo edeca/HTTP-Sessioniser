@@ -69,8 +69,6 @@ sub process_data {
 		exit 1;
 	}
 
-        #print STDERR "Switched to $key\n";
-	
 	# Collect from any new connections
 	if($args->state == Net::LibNIDS::NIDS_JUST_EST()) {
 		$self->{statistics}{total_connections}++;
@@ -86,6 +84,7 @@ sub process_data {
 #		print STDERR "New connection: $key (" . $statistics{open_connections} . " open)\n";
 
 	} elsif ($args->state == Net::LibNIDS::NIDS_CLOSE()) {
+
 		# If this flag has been set, there was a successful response with
 		# no content length header.  We can assume that the connection close
 		# marks the end-of-data, so pass it back now
@@ -157,26 +156,18 @@ sub process_data {
 		# Data toward the client
 		if ($args->client->count_new) {
 			my $data = substr($args->client->data, 0, $args->client->count_new);
+
+			# Data from the server->client before we expected it.  Possibly HTTP pipelining, which
+			# isn't yet supported.
 			if (!defined $self->{connections}{$key}{request_complete}) {
-				#print STDERR "ERROR: Data from server->client before request finished in $key\n";
-#print "data was: $data\n\n\n";
-
-#my $reqobj = $connections{$key}{request_obj};
-#print Dumper \$connections{$key};
-#print Dumper \$reqobj->object;
-
-#my $resobj = $connections{$key}{response_obj};
-
-
 				$self->stop_collecting($args, $key);
 				return;
 			}
 
+			# Set the time from the first packet of the response
 			if (!defined $self->{connections}{$key}{response_time}) {
 				$self->{connections}{$key}{response_time} = $args->lastpacket_sec;
 			}
-
-#			print "DEBUG: Parsing data server->client\n";
 
 			# HTTP::Parser uses die(), so catch that here
 			my $status;
@@ -193,8 +184,6 @@ sub process_data {
 
 			# Missing content-length header
 			if ($status == -3) {
-#				print "DEBUG: status was -3, no content length\n";
-
 				# Set a flag to show that the response had no content-length header,
 				# then assume at the end of this connection that we need to process it
 				$self->{connections}{$key}{no_content_length} = 1;
@@ -202,7 +191,6 @@ sub process_data {
 
 			# No more data needed
 			if ($status == 0) {
-#				print "DEBUG: We have a complete response\n";
 				$self->do_callback($key, $args);
 
 			}
@@ -224,12 +212,13 @@ sub do_callback {
 		exit 1;
 	}
 
-	my $info = { 'request_time' => $self->{connections}{$key}{request_time},
+	my $info = { 
+		'request_time' => $self->{connections}{$key}{request_time},
 		'response_time' => $self->{connections}{$key}{response_time},
 		'filename' => $self->{current_filename},
-        'client_ip' => $nids_obj->client_ip,
-        'server_ip' => $nids_obj->server_ip
-    };
+	        'client_ip' => $nids_obj->client_ip,
+	        'server_ip' => $nids_obj->server_ip
+	};
 
 	$self->{callback}($request, $response, $info);
 
