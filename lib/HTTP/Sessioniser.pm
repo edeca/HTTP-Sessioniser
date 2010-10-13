@@ -31,9 +31,9 @@ our %EXPORT_TAGS = ( 'all' => [ qw(
 
 our @EXPORT_OK = ( @{ $EXPORT_TAGS{'all'} } );
 
-our @EXPORT = qw(new parse_file);
+our @EXPORT = qw(new parse_file ports add_port);
 
-our $VERSION = '0.04';
+our $VERSION = '0.05';
 
 # Preloaded methods go here.
 sub new {
@@ -46,6 +46,8 @@ sub new {
 	$self->{statistics} = {};
 	$self->{statistics}{open_connections} = 0;
 	$self->{statistics}{total_connections} = 0;
+
+	@{$self->{portlist}} = qw(80 443 8080 3128);
 
 	return $self;
 }
@@ -239,8 +241,6 @@ sub do_callback {
 	return;
 }
 
-
-
 # Stop collecting on a connection for some reason
 sub stop_collecting {
   my ($self, $args, $key) = @_;
@@ -281,7 +281,8 @@ sub parse_file {
 
 	# Set a pcap filter, see the manpage for tcpdump for more information.  The manpage for
 	# libnids explains why the 'or (..)' is required.
-	Net::LibNIDS::param::set_pcap_filter('port 80 or port 443 or port 8080 or port 3128 or (ip[6:2] & 0x1fff != 0)');
+	my $bpf_ports = join(" or ", map { "port $_" } @{$self->{portlist}});
+	Net::LibNIDS::param::set_pcap_filter($bpf_ports . ' or (ip[6:2] & 0x1fff != 0)');
 
 	if (!Net::LibNIDS::init()) {
 		warn "Uh oh, libnids failed to initialise!\n";
@@ -309,6 +310,33 @@ sub clear_statistics {
 	undef $self->{statistics};
 	$self->{statistics} = {};
 }
+
+# return or set array containing tcp ports we assume HTTP transmissions are on
+sub ports {
+	my ($self, @ports) = @_;
+
+	if (@ports) {
+		$self->{portlist} = qw();
+
+		foreach my $p (@ports) {
+			push(@{$self->{portlist}}, $p) if $p =~ /\d+/ and ($p >= 0 or $p <= 65535);
+		}
+
+		# TODO: If our portlist is empty here, should we reset it?
+	}
+	return @{$self->{portlist}};
+}
+
+# add to ports list e.g. need to add some strange proxy port
+sub add_port {
+	my ($self, $tcpport) = @_;
+	return 0 if $tcpport !~ /^\d+$/;
+	return 0 if $tcpport < 0 or $tcpport > 65535;
+
+	push(@{$self->{portlist}}, $tcpport);
+	return $tcpport;
+}
+
 
 # Autoload methods go after =cut, and are processed by the autosplit program.
 
