@@ -3,10 +3,11 @@ package HTTP::Sessioniser;
 use 5.008008;
 use strict;
 use warnings;
-#use File::Slurp;
-use IO::Compress::Gzip;		# We don't actually use this, but if it isn't installed
-				# then HTTP::Response will silently not ungzip data
-				# Using it here will error if it is installed
+
+# We don't actually use this, but if it isn't installed
+# then HTTP::Response will silently not ungzip data
+# Using it here will error if it is installed
+use IO::Compress::Gzip;		
 
 # Be sure to use version 0.05 of HTTP::Parser with the two patches submitted
 # to the public CPAN bug tracker. 
@@ -14,28 +15,54 @@ use HTTP::Parser 0.05;
 use Net::LibNIDS 0.02;
 use Carp;
 
-require Exporter;
 use AutoLoader qw(AUTOLOAD);
-
-our @ISA = qw(Exporter);
-
-# Items to export into callers namespace by default. Note: do not export
-# names by default without a very good reason. Use EXPORT_OK instead.
-# Do not simply export all your public functions/methods/constants.
-
-# This allows declaration	use HTTP::Sessioniser ':all';
-# If you do not need this, moving things directly into @EXPORT or @EXPORT_OK
-# will save memory.
-our %EXPORT_TAGS = ( 'all' => [ qw(
-) ] );
-
-our @EXPORT_OK = ( @{ $EXPORT_TAGS{'all'} } );
-
-our @EXPORT = qw(new parse_file ports add_port);
 
 our $VERSION = '0.05';
 
-# Preloaded methods go here.
+=head1 NAME
+
+HTTP::Sessioniser - Rebuild HTTP sessions from pcap streams
+
+=head1 SYNOPSIS
+
+  use HTTP::Sessioniser;
+
+  # This will be called once per HTTP request/response pair
+  sub my_callback {
+    my ($request, $response, $info) = @_;
+
+    # $request is HTTP::Request
+    # $response is HTTP::Response
+  }
+
+  my $s = HTTP::Sessioniser->new();
+  $s->parse_file('/path/to/file.pcap', \&my_callback);
+
+=head1 DESCRIPTION
+
+This module extracts HTTP sessions from pcap files with the help of Net::LibNIDS.
+
+It will piece HTTP data back together and return a pair of HTTP::Request and 
+HTTP::Response which correspond to one HTTP 'session'.
+
+HTTP CONNECT sessions are dealt with specially: the first request/response pair will
+be returned as normal, subsequent requests will be skipped (as they do not contain
+HTTP requests or responses, only SSL data).
+
+=head2 EXPORT
+
+None by default.
+
+=head2 Methods
+
+=head3 new
+
+  my $s = HTTP::Sessioniser->new();
+
+Creates a new object.
+
+=cut
+
 sub new {
 	my ($class, %args) = @_;
 
@@ -52,6 +79,96 @@ sub new {
 	return $self;
 }
 
+=head3 parse_file
+
+  $s->parse_file('/path/to/file.pcap', \&callback);
+
+Parses a pcap file using libnids, rebuilding pairs of HTTP::Request and HTTP::Response.  These will be passed to the callback function along with a hash of information about the current connection.
+
+=cut
+
+sub parse_file {
+	my ($self, $filename, $callback) = @_;
+
+	# Reset the current connections table
+	$self->{connections} = {};
+
+	# Set this so we have them inside the callback
+	$self->{current_filename} = $filename;
+    $self->{callback} = $callback;
+
+	Net::LibNIDS::param::set_filename($filename);
+
+	# Set a pcap filter, see the manpage for tcpdump for more information.  The manpage for
+	# libnids explains why the 'or (..)' is required.
+	my $bpf_ports = join(" or ", map { "port $_" } @{$self->{portlist}});
+	Net::LibNIDS::param::set_pcap_filter($bpf_ports . ' or (ip[6:2] & 0x1fff != 0)');
+
+	if (!Net::LibNIDS::init()) {
+		warn "Uh oh, libnids failed to initialise!\n";
+		warn "Check you have successfully built and installed the module first.\n";
+		return;
+	}
+
+	# Set the callback function and run libnids
+	my $data_callback = sub { $self->process_data(@_); };
+	Net::LibNIDS::tcp_callback($data_callback);
+
+	# libnids resets state for each new file, so reset counter
+	$self->{statistics}{open_connections} = 0;
+	Net::LibNIDS::run();
+
+	# TODO: At the end, go through and return all requests that had no responses?
+}
+
+sub clear_statistics {
+	my ($self) = @_;
+	undef $self->{statistics};
+	$self->{statistics} = {};
+}
+
+=head3 ports
+
+  $s->ports( [ 80, 443, 8080, 3128 ] );
+  my @p = $s->ports;
+
+Set or return and array of ports we expect to see HTTP transmission on.  The default set of ports is 80, 443, 8080 and 3128.  
+
+If you are looking for HTTP on other ports (e.g. proxying or application servers) then use this to set the filter appropriately.
+
+=cut
+
+sub ports {
+	my ($self, @ports) = @_;
+
+	if (@ports) {
+		$self->{portlist} = qw();
+
+		foreach my $p (@ports) {
+			push(@{$self->{portlist}}, $p) if $p =~ /\d+/ and ($p >= 0 or $p <= 65535);
+		}
+
+		# TODO: If our portlist is empty here, should we reset it?
+	}
+	return @{$self->{portlist}};
+}
+
+=head3 add_port
+
+  $s->add_port(8000);
+
+Add one port to the filter list.
+
+=cut
+sub add_port {
+	my ($self, $tcpport) = @_;
+	return 0 if $tcpport !~ /^\d+$/;
+	return 0 if $tcpport < 0 or $tcpport > 65535;
+
+	push(@{$self->{portlist}}, $tcpport);
+	return $tcpport;
+}
+
 # The libnids callback
 sub process_data {
 	my ($self, $args) = @_;
@@ -63,7 +180,6 @@ sub process_data {
 	if (defined $self->{connections}{$key}{ignored}) {
 		return;
 	}
-	 
 
 	if($args->state != Net::LibNIDS::NIDS_JUST_EST() && !defined $self->{connections}{$key}{request_obj}) {
 		#print "ERROR: not just established and no object in $key\n";
@@ -101,8 +217,8 @@ sub process_data {
 	} elsif (
           $args->state == Net::LibNIDS::NIDS_RESET() ||
           $args->state == Net::LibNIDS::NIDS_TIMED_OUT() ||
-	  $args->state == Net::LibNIDS::NIDS_EXITING()
-        ) {
+	      $args->state == Net::LibNIDS::NIDS_EXITING()
+     ) {
 		#print "EXIT/RESET CONNECTION EVENT FOR $key IS CALLING cleanup " . $args->state . "\n";
 		$self->cleanup($key);
 		return;
@@ -204,6 +320,7 @@ sub process_data {
 	}
 }
 
+# We have a complete HTTP transaction, return it to the user
 sub do_callback {
 	my ($self, $key, $nids_obj) = @_;
 
@@ -222,8 +339,8 @@ sub do_callback {
 		'response_time' => $self->{connections}{$key}{response_time},
 		'response_time_usec' => $self->{connections}{$key}{response_time_usec},
 		'filename' => $self->{current_filename},
-	        'client_ip' => $nids_obj->client_ip,
-	        'server_ip' => $nids_obj->server_ip
+	    'client_ip' => $nids_obj->client_ip,
+	    'server_ip' => $nids_obj->server_ip
 	};
 
 	$self->{callback}($request, $response, $info);
@@ -255,7 +372,7 @@ sub stop_collecting {
   return;
 }
 
-# A connection has finished, cleanup any associated stuff
+# A connection has finished, cleanup any associated data
 sub cleanup {
   my ($self, $key) = @_;
 
@@ -263,110 +380,9 @@ sub cleanup {
   $self->{statistics}{open_connections}--;
 }
 
-# Pass me the name of a pcap file to parse for HTTP data
-sub parse_file {
+=head1 BUGS
 
-	# TODO: add $http_ports variable for configuring the pcap filter
-	my ($self, $filename, $callback) = @_;
-
-	# Reset the current connections table
-	$self->{connections} = {};
-
-	# Set this so we have them inside the callback
-	$self->{current_filename} = $filename;
-        $self->{callback} = $callback;
-
-	# SEND FILE TO LIBNIDS
-	Net::LibNIDS::param::set_filename($filename);
-
-	# Set a pcap filter, see the manpage for tcpdump for more information.  The manpage for
-	# libnids explains why the 'or (..)' is required.
-	my $bpf_ports = join(" or ", map { "port $_" } @{$self->{portlist}});
-	Net::LibNIDS::param::set_pcap_filter($bpf_ports . ' or (ip[6:2] & 0x1fff != 0)');
-
-	if (!Net::LibNIDS::init()) {
-		warn "Uh oh, libnids failed to initialise!\n";
-		warn "Check you have successfully built and installed the module first.\n";
-		exit;
-	}
-
-	# Set the callback function and run libnids
-	my $data_callback = sub { $self->process_data(@_); };
-	Net::LibNIDS::tcp_callback($data_callback);
-
-	# libnids resets state for each new file, so reset counter
-	$self->{statistics}{open_connections} = 0;
-	Net::LibNIDS::run();
-
-	# At the end, go through and return all requests that had no responses?
-
-	# Call the given callback function
-	#&$callback($request_parser->object, $response_parser->object, $filename);
-
-}
-
-sub clear_statistics {
-	my ($self) = @_;
-	undef $self->{statistics};
-	$self->{statistics} = {};
-}
-
-# return or set array containing tcp ports we assume HTTP transmissions are on
-sub ports {
-	my ($self, @ports) = @_;
-
-	if (@ports) {
-		$self->{portlist} = qw();
-
-		foreach my $p (@ports) {
-			push(@{$self->{portlist}}, $p) if $p =~ /\d+/ and ($p >= 0 or $p <= 65535);
-		}
-
-		# TODO: If our portlist is empty here, should we reset it?
-	}
-	return @{$self->{portlist}};
-}
-
-# add to ports list e.g. need to add some strange proxy port
-sub add_port {
-	my ($self, $tcpport) = @_;
-	return 0 if $tcpport !~ /^\d+$/;
-	return 0 if $tcpport < 0 or $tcpport > 65535;
-
-	push(@{$self->{portlist}}, $tcpport);
-	return $tcpport;
-}
-
-
-# Autoload methods go after =cut, and are processed by the autosplit program.
-
-1;
-__END__
-
-=head1 NAME
-
-HTTP::Sessioniser - Perl extension to extract HTTP sessions from pcap data
-
-=head1 SYNOPSIS
-
-  use HTTP::Sessioniser;
-
-=head1 DESCRIPTION
-
-This module extracts HTTP sessions from pcap files with the help of Net::LibNIDS.
-
-It will piece HTTP data back together and return a pair of HTTP::Request and 
-HTTP::Response which correspond to one HTTP 'session'.
-
-HTTP CONNECT sessions are dealt with specially, the first request/response pair will
-be returned as normal, subsequent requests will be skipped (as they do not contain
-HTTP requests or responses, only SSL data).
-
-This code issues lots of warnings, see perldoc -f warn if you want to silence them.
-
-=head2 EXPORT
-
-None by default.
+This module does not support HTTP pipelining.  It could be added if I find data which requires it.
 
 =head1 SEE ALSO
 
@@ -374,10 +390,14 @@ HTTP::Parser - used to parse data into HTTP::Request or HTTP::Response objects
 
 =head1 AUTHOR
 
-David Cannings <lt>david@edeca.net<gt>
+David Cannings E<lt>david@edeca.netE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
 Copyright (C) 2010 by David Cannings
 
 =cut
+
+1;
+__END__
+

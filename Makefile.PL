@@ -22,4 +22,4 @@ requires('Net::LibNIDS' => '0.02'); # bugfixes
 repository('http://github.com/edeca/HTTP-Sessioniser');
 auto_manifest;
 
-WriteAll();
+WriteAll;
