@@ -95,7 +95,7 @@ sub parse_file {
 
 	# Set this so we have them inside the callback
 	$self->{current_filename} = $filename;
-    $self->{callback} = $callback;
+	$self->{callback} = $callback;
 
 	Net::LibNIDS::param::set_filename($filename);
 
