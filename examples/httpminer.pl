@@ -5,7 +5,7 @@ use warnings;
 use Data::Dumper;
 use MIME::Base64;
 use Time::Format;
-use Text::CSV_XS;
+use Text::CSV;
 use HTTP::Sessioniser;
 use URI;
 use Digest::MD5 qw(md5_hex);
@@ -33,7 +33,7 @@ sub es($) {
 }
 
 my $sessioniser = new HTTP::Sessioniser;
-my $csv_xs = Text::CSV_XS->new({ 'quote_char' => "\"", 'escape_char' => "\\", 'always_quote' => 1 });
+my $csv = Text::CSV->new({ 'quote_char' => "\"", 'escape_char' => "\\", 'always_quote' => 1 });
 
 foreach (<STDIN>) {
 	chomp $_;
@@ -57,27 +57,27 @@ sub process_data($$) {
 	# CSV output of request data, fields are:
 	# request_time, client_ip, server_ip, method, url, url_hash, host, cookie, request_data, 
 	# user_agent, referer, auth_basic, proxy_auth, capturefile	
-	my @csv;
+	my @row;
 
-	push @csv, time_format('yyyy-mm-dd hh:mm:ss', $info->{request_time});
-	push @csv, $info->{client_ip};
-	push @csv, $info->{server_ip};
-	push @csv, es($request->method);
-	push @csv, es($request->uri);
+	push @row, time_format('yyyy-mm-dd hh:mm:ss', $info->{request_time});
+	push @row, $info->{client_ip};
+	push @row, $info->{server_ip};
+	push @row, es($request->method);
+	push @row, es($request->uri);
 
 	# This is the MD5 hash of the path and query string, which can 
 	# uniquely identify a request to a specific page & parameters.
 	# I use this as one index when putting results into a database.
 	my $uri = URI->new($request->uri);
-	push @csv, md5_hex($uri->path_query);
+	push @row, md5_hex($uri->path_query);
 
-	push @csv, es($request->header('Host'));
-	push @csv, encode_base64(es($request->header('Cookie')), '');
-	push @csv, encode_base64(es($request->content), '');
-	push @csv, es($request->headers->user_agent);
-	push @csv, es($request->headers->referer);
-	push @csv, es($request->headers->authorization_basic);
-	push @csv, es($request->headers->proxy_authorization_basic); 
+	push @row, es($request->header('Host'));
+	push @row, encode_base64(es($request->header('Cookie')), '');
+	push @row, encode_base64(es($request->content), '');
+	push @row, es($request->headers->user_agent);
+	push @row, es($request->headers->referer);
+	push @row, es($request->headers->authorization_basic);
+	push @row, es($request->headers->proxy_authorization_basic); 
 
 	# CSV output of response data, fields are:
 	# response_time, status, message, content-type, server, expires, server_date
@@ -85,11 +85,11 @@ sub process_data($$) {
 	# There was no response.  This can happen if the server was not reachable, the
 	# response was not in the pcap etc.
 	if (!defined $response) { 
-		push @csv, "", "", "", "", "", "", "";
+		push @row, "", "", "", "", "", "", "";
 	} else {
-		push @csv, time_format('yyyy-mm-dd hh:mm:ss', $info->{response_time});
-		push @csv, es($response->code);
-		push @csv, es($response->message);
+		push @row, time_format('yyyy-mm-dd hh:mm:ss', $info->{response_time});
+		push @row, es($response->code);
+		push @row, es($response->message);
 		
 		# Get the content type and trim off any extra (e.g. charset info)
 		my $content_type = es($response->header('Content-Type'));
@@ -97,14 +97,14 @@ sub process_data($$) {
 			$content_type = $1;
 		}
 
-		push @csv, $content_type;
-		push @csv, es($response->headers->server);
-		push @csv, es(time_format('yyyy-mm-dd hh:mm:ss', $response->headers->expires));
-		push @csv, es(time_format('yyyy-mm-dd hh:mm:ss', $response->headers->date));
+		push @row, $content_type;
+		push @row, es($response->headers->server);
+		push @row, es(time_format('yyyy-mm-dd hh:mm:ss', $response->headers->expires));
+		push @row, es(time_format('yyyy-mm-dd hh:mm:ss', $response->headers->date));
 	}
-	push @csv, $info->{filename};
+	push @row, $info->{filename};
 
-	$csv_xs->combine(@csv);
-	print $csv_xs->string();
+	$csv->combine(@row);
+	print $csv->string();
 	print "\n";
 }

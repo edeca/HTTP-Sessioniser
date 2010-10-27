@@ -9,3 +9,4 @@ MANIFEST.SKIP
 tar.gz$
 \.git/*
 \.tmp$
+\.tdy$
