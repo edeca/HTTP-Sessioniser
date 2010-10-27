@@ -40,7 +40,11 @@ foreach (<STDIN>) {
  	my $filename = $_;
 	my $data;
 
-	print STDERR "[+] Processing [$filename]\n";
+	if (-r $filename) {
+		print STDERR "[+] Processing [$filename]\n";
+	} else {
+		print STDERR "[!] Can't read $filename\n";
+	}
 	
 	# Process this file using HTTP::Sessioniser, passing results to
 	# our callback

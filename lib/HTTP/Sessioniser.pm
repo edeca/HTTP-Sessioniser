@@ -183,7 +183,7 @@ sub process_data {
 
 	if($args->state != Net::LibNIDS::NIDS_JUST_EST() && !defined $self->{connections}{$key}{request_obj}) {
 		#print "ERROR: not just established and no object in $key\n";
-		print "status was: " . $args->state . "\n";
+		#print "status was: " . $args->state . "\n";
 		exit 1;
 	}
 
@@ -199,7 +199,7 @@ sub process_data {
 		$self->{connections}{$key}{request_obj} = HTTP::Parser->new(request => 1);
 		$self->{connections}{$key}{response_obj} = HTTP::Parser->new(response => 1);
 
-#		print STDERR "New connection: $key (" . $statistics{open_connections} . " open)\n";
+		#print STDERR "New connection: $key (" . $self->{statistics}{open_connections} . " open)\n";
 
 	} elsif ($args->state == Net::LibNIDS::NIDS_CLOSE()) {
 
@@ -207,10 +207,10 @@ sub process_data {
 		# no content length header.  We can assume that the connection close
 		# marks the end-of-data, so pass it back now
 		if ($self->{connections}{$key}->{no_content_length}) {
-#			print STDERR "DEBUG: No content length header, connection closed, assuming finished\n";
+			#print STDERR "DEBUG: No content length header, connection closed, assuming finished\n";
 			$self->do_callback($key, $args);
 		}
-#		print "CLOSED CONNECTION EVENT FOR $key IS CALLING cleanup\n";
+		#print "CLOSED CONNECTION EVENT FOR $key IS CALLING cleanup\n";
 		$self->cleanup($key);
 		return;
 
@@ -274,11 +274,13 @@ sub process_data {
 
 		# Data toward the client
 		if ($args->client->count_new) {
+			#print "DEBUG: Parsing data server->client\n";
 			my $data = substr($args->client->data, 0, $args->client->count_new);
 
 			# Data from the server->client before we expected it.  Possibly HTTP pipelining, which
 			# isn't yet supported.
 			if (!defined $self->{connections}{$key}{request_complete}) {
+				#print "DEBUG: Data from server to client unexpectedly?\n";
 				$self->stop_collecting($args, $key);
 				return;
 			}
@@ -329,7 +331,8 @@ sub do_callback {
 
 	# BUG: Shouldn't ever get this!
 	if (!defined $request || !defined $response) {
-		print "DEBUG: request or response is not defined in $key\n";
+		# TODO - Use croak here instead?
+		#print "DEBUG: request or response is not defined in $key\n";
 		exit 1;
 	}
 
